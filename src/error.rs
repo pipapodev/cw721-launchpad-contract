@@ -12,4 +12,10 @@ pub enum ContractError {
 
     #[error(transparent)]
     Ownership(#[from] OwnershipError),
+
+    #[error("InsufficientFunds")]
+    InsufficientFunds {},
+
+    #[error("SoldOut")]
+    SoldOut {},
 }
