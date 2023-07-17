@@ -4,7 +4,8 @@ use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response,
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, GetCountResponse, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::state::TAKERFEE;
 use cw721_rewards::{helpers::Cw721Contract, msg::ExecuteMsg as Cw721ExecuteMsg};
 
 // version info for migration info
@@ -16,10 +17,11 @@ pub fn instantiate(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    _msg: InstantiateMsg,
+    msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     cw_ownable::initialize_owner(deps.storage, deps.api, Some(&info.sender.to_string()))?;
 
+    TAKERFEE.save(deps.storage, &msg.taker_fee.u64())?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::new()
@@ -38,8 +40,8 @@ pub fn execute(
         ExecuteMsg::UpdateOwnership(action) => execute::update_ownership(deps, env, info, action),
         ExecuteMsg::Mint {
             contract_address,
-            receiver_id,
-        } => execute::mint(deps, info, contract_address, receiver_id),
+            receiver_address,
+        } => execute::mint(deps, env, info, contract_address, receiver_address),
         ExecuteMsg::AddLaunch {
             owner_address,
             contract_address,
@@ -152,7 +154,7 @@ pub mod execute {
                 public_started_at: public_started_at.u64(),
                 public_ended_at: public_ended_at.u64(),
                 price_denom,
-                last_token_id: 1,
+                last_token_id: 0,
                 royalty_percentage,
                 royalty_payment_address,
             },
@@ -176,6 +178,7 @@ pub mod execute {
 
     pub fn mint(
         deps: DepsMut,
+        env: Env,
         info: MessageInfo,
         contract_address: String,
         receiver_id: Option<String>,
@@ -196,6 +199,14 @@ pub mod execute {
             return Err(ContractError::SoldOut {});
         }
 
+        // TODO: determine minting status, public only for now
+        let current_timestamp_in_seconds = env.block.time.seconds();
+        if launch.public_started_at > current_timestamp_in_seconds
+            || launch.public_ended_at < current_timestamp_in_seconds
+        {
+            return Err(ContractError::Closed {});
+        }
+
         let receiver_id = if let Some(receiver_id) = receiver_id {
             deps.api.addr_validate(receiver_id.as_str())?
         } else {
@@ -206,22 +217,22 @@ pub mod execute {
         let token_id = (launch.last_token_id + 1).to_string();
         launch.last_token_id += 1;
 
-        let media_extension = if let Some(media_extension) = launch.media_extension {
+        let media_extension = if let Some(media_extension) = launch.media_extension.clone() {
             media_extension
         } else {
             "png".to_string()
         };
 
         let mint_msg = Cw721ExecuteMsg::<Option<Metadata>>::Mint {
-            token_id: (launch.last_token_id + 1).to_string(),
+            token_id: token_id,
             owner: receiver_id.to_string(),
             token_uri: Some(format!(
                 "{}/{}.{}",
                 launch.base_uri, token_id, media_extension
             )),
             extension: Some(Metadata {
-                royalty_percentage: launch.royalty_percentage,
-                royalty_payment_address: launch.royalty_payment_address,
+                royalty_percentage: launch.royalty_percentage.clone(),
+                royalty_payment_address: launch.royalty_payment_address.clone(),
                 image: None,
                 image_data: None,
                 external_url: None,
@@ -234,6 +245,8 @@ pub mod execute {
             }),
         };
 
+        LAUNCHES.save(deps.storage, &contract_address, &launch)?;
+
         let callback = Cw721Contract::<Empty, Empty>(contract_address, PhantomData, PhantomData)
             .call(mint_msg)?;
 
@@ -243,40 +256,31 @@ pub mod execute {
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::GetCount {} => to_binary(&query::count(deps)?),
-    }
+    match msg {}
 }
 
 pub mod query {
     use super::*;
-
-    pub fn count(deps: Deps) -> StdResult<GetCountResponse> {
-        Ok(GetCountResponse { count: 0 })
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{coins, from_binary};
+    use cosmwasm_std::{coins, from_binary, Uint64};
 
     #[test]
     fn proper_initialization() {
         let mut deps = mock_dependencies();
 
-        let msg = InstantiateMsg {};
+        let msg = InstantiateMsg {
+            taker_fee: Uint64::new(10),
+        };
         let info = mock_info("creator", &coins(1000, "earth"));
 
         // we can just call .unwrap() to assert this was a success
         let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
         assert_eq!(0, res.messages.len());
-
-        // it worked, let's query the state
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: GetCountResponse = from_binary(&res).unwrap();
-        assert_eq!(17, value.count);
     }
 
     // #[test]

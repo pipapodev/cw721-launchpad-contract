@@ -2,7 +2,7 @@
 mod tests {
     use crate::helpers::CwTemplateContract;
     use crate::msg::InstantiateMsg;
-    use cosmwasm_std::{Addr, Coin, Empty, Uint128};
+    use cosmwasm_std::{Addr, Coin, Empty, Uint128, Uint64};
     use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
 
     pub fn contract_template() -> Box<dyn Contract<Empty>> {
@@ -38,7 +38,9 @@ mod tests {
         let mut app = mock_app();
         let cw_template_id = app.store_code(contract_template());
 
-        let msg = InstantiateMsg {};
+        let msg = InstantiateMsg {
+            taker_fee: Uint64::new(2),
+        };
         let cw_template_contract_addr = app
             .instantiate_contract(
                 cw_template_id,

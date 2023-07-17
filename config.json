@@ -3,7 +3,16 @@
   "template": "increment",
   "name": "cw721-launchpad-contract",
   "developer": {
-    "deployments": []
+    "deployments": [
+      {
+        "project": "cw721-launchpad-contract",
+        "type": "store",
+        "chainId": "constantine-3",
+        "codeId": 782,
+        "checksum": "3461fbc8e669c5076493094eab6c1f8fa07f488993e681c3da2f642e92b8bf79",
+        "txhash": "F189CD5C141C142DDD5E6CFFE4DC62CB191BCA5C1E728B51F1DC19EAA06935F8"
+      }
+    ]
   },
   "network": {
     "name": "constantine",

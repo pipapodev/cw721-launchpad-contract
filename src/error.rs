@@ -18,4 +18,7 @@ pub enum ContractError {
 
     #[error("SoldOut")]
     SoldOut {},
+
+    #[error("Closed")]
+    Closed {},
 }

@@ -3,14 +3,16 @@ use cosmwasm_std::{Uint128, Uint64};
 use cw_ownable::cw_ownable_execute;
 
 #[cw_serde]
-pub struct InstantiateMsg {}
+pub struct InstantiateMsg {
+    pub taker_fee: Uint64,
+}
 
 #[cw_ownable_execute]
 #[cw_serde]
 pub enum ExecuteMsg {
     Mint {
         contract_address: String,
-        receiver_id: Option<String>,
+        receiver_address: Option<String>,
     },
     AddLaunch {
         owner_address: String,
@@ -41,9 +43,7 @@ pub enum ExecuteMsg {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     // GetCount returns the current count as a json-encoded number
-    #[returns(GetCountResponse)]
-    GetCount {},
-    // GetLaunch {},
+    // GetLaunch { contract_address: String },
     // GetLaunchStatus {
     //     contract_address: String,
     // },
@@ -51,6 +51,6 @@ pub enum QueryMsg {
 
 // We define a custom struct for each query response
 #[cw_serde]
-pub struct GetCountResponse {
+pub struct GetLaunch {
     pub count: i32,
 }

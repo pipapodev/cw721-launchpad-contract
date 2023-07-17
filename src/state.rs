@@ -1,7 +1,7 @@
 use cosmwasm_schema::cw_serde;
 
 use cosmwasm_std::Addr;
-use cw_storage_plus::Map;
+use cw_storage_plus::{Item, Map};
 
 #[cw_serde]
 pub struct Launch {
@@ -25,4 +25,5 @@ pub struct Launch {
     pub royalty_payment_address: Option<String>,
 }
 
+pub const TAKERFEE: Item<u64> = Item::new("taker_fee");
 pub const LAUNCHES: Map<&Addr, Launch> = Map::new("launches");
