@@ -127,13 +127,16 @@ pub fn execute(
             contract_address,
             account_addresses,
         } => execute::remove_to_whitelist(deps, info, contract_address, account_addresses),
+        ExecuteMsg::ChangeTakerFee { taker_fee } => {
+            execute::change_taker_fee(deps, info, taker_fee)
+        }
     }
 }
 
 pub mod execute {
     use std::marker::PhantomData;
 
-    use cosmwasm_std::{Addr, Empty, Uint128, Uint64};
+    use cosmwasm_std::{coins, Addr, BankMsg, Decimal, Empty, Uint128, Uint64};
     use cw721_rewards::Metadata;
     use cw_storage_plus::Map;
 
@@ -177,6 +180,12 @@ pub mod execute {
 
         let owner_address = deps.api.addr_validate(&owner_address)?;
         let contract_address = deps.api.addr_validate(&contract_address)?;
+
+        let exist = LAUNCHES.load(deps.storage, &contract_address);
+
+        if exist.is_ok() {
+            return Err(ContractError::LaunchAlreadyExist {});
+        }
 
         LAUNCHES.save(
             deps.storage,
@@ -452,7 +461,38 @@ pub mod execute {
         let callback = Cw721Contract::<Empty, Empty>(contract_address, PhantomData, PhantomData)
             .call(mint_msg)?;
 
-        Ok(Response::new().add_message(callback))
+        let mut messages = Vec::new();
+        messages.push(callback);
+
+        // fund transfers
+        // marketplace funds
+        let taker_fee = TAKERFEE.load(deps.storage)?;
+        let admin_funds = fund_input * Decimal::percent(taker_fee);
+
+        if admin_funds.u128() > 0 {
+            let send_admin_funds_msg = BankMsg::Send {
+                to_address: cw_ownable::get_ownership(deps.storage)
+                    .unwrap()
+                    .owner
+                    .unwrap()
+                    .to_string(),
+                amount: coins(admin_funds.u128(), launch.price_denom.clone()),
+            };
+            messages.push(send_admin_funds_msg.into())
+        }
+
+        // project owner funds
+        let owner_funds = fund_input - admin_funds;
+        if owner_funds.u128() > 0 {
+            let send_owner_funds_msg = BankMsg::Send {
+                to_address: launch.owner_address.to_string(),
+                amount: coins(owner_funds.u128(), launch.price_denom),
+            };
+
+            messages.push(send_owner_funds_msg.into())
+        }
+
+        Ok(Response::new().add_messages(messages))
     }
 
     pub fn add_to_whitelist(
@@ -461,7 +501,14 @@ pub mod execute {
         contract_address: String,
         account_addresses: Vec<String>,
     ) -> Result<Response, ContractError> {
-        cw_ownable::assert_owner(deps.storage, &info.sender)?;
+        let launch = LAUNCHES.load(deps.storage, &deps.api.addr_validate(&contract_address)?)?;
+        let is_owner = cw_ownable::assert_owner(deps.storage, &info.sender);
+
+        if is_owner.is_err() {
+            if info.sender != launch.owner_address {
+                return Err(ContractError::Unauthorized {});
+            }
+        }
 
         let whitelist_map_key = format!(
             "{}-{}",
@@ -483,7 +530,14 @@ pub mod execute {
         contract_address: String,
         account_addresses: Vec<String>,
     ) -> Result<Response, ContractError> {
-        cw_ownable::assert_owner(deps.storage, &info.sender)?;
+        let launch = LAUNCHES.load(deps.storage, &deps.api.addr_validate(&contract_address)?)?;
+        let is_owner = cw_ownable::assert_owner(deps.storage, &info.sender);
+
+        if is_owner.is_err() {
+            if info.sender != launch.owner_address {
+                return Err(ContractError::Unauthorized {});
+            }
+        }
 
         let whitelist_map_key = format!(
             "{}-{}",
@@ -498,6 +552,18 @@ pub mod execute {
 
         Ok(Response::new().add_attribute("action", "add_to_whitelist"))
     }
+
+    pub fn change_taker_fee(
+        deps: DepsMut,
+        info: MessageInfo,
+        taker_fee: Uint64,
+    ) -> Result<Response, ContractError> {
+        cw_ownable::assert_owner(deps.storage, &info.sender)?;
+
+        TAKERFEE.save(deps.storage, &taker_fee.u64())?;
+
+        Ok(Response::new().add_attribute("action", "change_taker_fee"))
+    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -509,12 +575,23 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetLaunchStatus { contract_address } => {
             to_binary(&query::get_launch_status(deps, env, contract_address)?)
         }
+        QueryMsg::GetWhitelistStatus {
+            contract_address,
+            account_address,
+        } => to_binary(&query::get_whitelist_status(
+            deps,
+            contract_address,
+            account_address,
+        )?),
     }
 }
 
 pub mod query {
+    use cosmwasm_std::{Addr, Empty};
+    use cw_storage_plus::Map;
+
     use crate::{
-        msg::LaunchStatus,
+        msg::{LaunchStatus, WhitelistStatus},
         state::{Launch, LAUNCHES},
     };
 
@@ -551,6 +628,25 @@ pub mod query {
                 status: "closed".to_string(),
             })
         }
+    }
+
+    pub fn get_whitelist_status(
+        deps: Deps,
+        contract_address: String,
+        account_address: String,
+    ) -> StdResult<WhitelistStatus> {
+        let whitelist_map_key = format!(
+            "{}-{}",
+            deps.api.addr_validate(&contract_address)?,
+            "whitelist"
+        );
+        let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
+
+        let res = whitelist_map.load(deps.storage, &deps.api.addr_validate(&account_address)?);
+
+        Ok(WhitelistStatus {
+            is_whitelist: res.is_ok(),
+        })
     }
 }
 

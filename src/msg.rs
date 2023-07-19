@@ -2,6 +2,7 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Uint128, Uint64};
 use cw_ownable::cw_ownable_execute;
 
+#[allow(unused_imports)]
 use crate::state::Launch;
 
 #[cw_serde]
@@ -12,6 +13,9 @@ pub struct InstantiateMsg {
 #[cw_ownable_execute]
 #[cw_serde]
 pub enum ExecuteMsg {
+    ChangeTakerFee {
+        taker_fee: Uint64,
+    },
     Mint {
         contract_address: String,
         receiver_address: Option<String>,
@@ -71,15 +75,19 @@ pub enum QueryMsg {
     GetLaunch { contract_address: String },
     #[returns(LaunchStatus)]
     GetLaunchStatus { contract_address: String },
-}
-
-// We define a custom struct for each query response
-#[cw_serde]
-pub struct GetLaunch {
-    pub count: i32,
+    #[returns(WhitelistStatus)]
+    GetWhitelistStatus {
+        contract_address: String,
+        account_address: String,
+    },
 }
 
 #[cw_serde]
 pub struct LaunchStatus {
     pub status: String,
+}
+
+#[cw_serde]
+pub struct WhitelistStatus {
+    pub is_whitelist: bool,
 }

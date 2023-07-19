@@ -27,4 +27,7 @@ pub enum ContractError {
 
     #[error("MintQuotaExhausted")]
     MintQuotaExhausted {},
+
+    #[error("LaunchAlreadyExist")]
+    LaunchAlreadyExist {},
 }
