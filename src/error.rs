@@ -21,4 +21,10 @@ pub enum ContractError {
 
     #[error("Closed")]
     Closed {},
+
+    #[error("NotWhitelisted")]
+    NotWhitelisted {},
+
+    #[error("MintQuotaExhausted")]
+    MintQuotaExhausted {},
 }
