@@ -2,6 +2,8 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Uint128, Uint64};
 use cw_ownable::cw_ownable_execute;
 
+use crate::state::Launch;
+
 #[cw_serde]
 pub struct InstantiateMsg {
     pub taker_fee: Uint64,
