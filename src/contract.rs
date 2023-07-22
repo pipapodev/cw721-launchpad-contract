@@ -5,7 +5,7 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{NATIVE_DENOM, TAKERFEE};
+use crate::state::{NATIVE_DENOM, TAKERADDRESS, TAKERFEE};
 use cw721_rewards::{helpers::Cw721Contract, msg::ExecuteMsg as Cw721ExecuteMsg};
 
 // version info for migration info
@@ -23,6 +23,10 @@ pub fn instantiate(
 
     TAKERFEE.save(deps.storage, &msg.taker_fee.u64())?;
     NATIVE_DENOM.save(deps.storage, &msg.native_denom)?;
+    TAKERADDRESS.save(
+        deps.storage,
+        &deps.api.addr_validate(&msg.taker_address).unwrap(),
+    )?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::new()
@@ -482,22 +486,18 @@ pub mod execute {
         // fund transfers
         // marketplace funds
         let taker_fee = TAKERFEE.load(deps.storage)?;
-        let admin_funds = fund_input * Decimal::percent(taker_fee);
+        let taker_funds = fund_input * Decimal::percent(taker_fee);
 
-        if admin_funds.u128() > 0 {
-            let send_admin_funds_msg = BankMsg::Send {
-                to_address: cw_ownable::get_ownership(deps.storage)
-                    .unwrap()
-                    .owner
-                    .unwrap()
-                    .to_string(),
-                amount: coins(admin_funds.u128(), denom),
+        if taker_funds.u128() > 0 {
+            let send_taker_funds_msg = BankMsg::Send {
+                to_address: TAKERADDRESS.load(deps.storage).unwrap().to_string(),
+                amount: coins(taker_funds.u128(), denom),
             };
-            messages.push(send_admin_funds_msg.into())
+            messages.push(send_taker_funds_msg.into())
         }
 
         // project owner funds
-        let owner_funds = fund_input - admin_funds;
+        let owner_funds = fund_input - taker_funds;
         if owner_funds.u128() > 0 {
             let send_owner_funds_msg = BankMsg::Send {
                 to_address: launch.owner_address.to_string(),
@@ -678,6 +678,7 @@ mod tests {
         let msg = InstantiateMsg {
             taker_fee: Uint64::new(10),
             native_denom: "aconst".to_string(),
+            taker_address: "admin".to_string(),
         };
         let info = mock_info("creator", &coins(1000, "earth"));
 

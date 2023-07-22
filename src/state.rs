@@ -27,5 +27,6 @@ pub struct Launch {
 pub type ContractAddress = Addr;
 
 pub const TAKERFEE: Item<u64> = Item::new("taker_fee");
+pub const TAKERADDRESS: Item<Addr> = Item::new("taker_address");
 pub const NATIVE_DENOM: Item<String> = Item::new("native_denom");
 pub const LAUNCHES: Map<&Addr, Launch> = Map::new("launches");

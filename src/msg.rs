@@ -9,6 +9,7 @@ use crate::state::Launch;
 pub struct InstantiateMsg {
     pub taker_fee: Uint64,
     pub native_denom: String,
+    pub taker_address: String,
 }
 
 #[cw_ownable_execute]
