@@ -5,7 +5,7 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::TAKERFEE;
+use crate::state::{NATIVE_DENOM, TAKERFEE};
 use cw721_rewards::{helpers::Cw721Contract, msg::ExecuteMsg as Cw721ExecuteMsg};
 
 // version info for migration info
@@ -22,6 +22,7 @@ pub fn instantiate(
     cw_ownable::initialize_owner(deps.storage, deps.api, Some(&info.sender.to_string()))?;
 
     TAKERFEE.save(deps.storage, &msg.taker_fee.u64())?;
+    NATIVE_DENOM.save(deps.storage, &msg.native_denom)?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::new()
@@ -182,6 +183,14 @@ pub mod execute {
             return Err(ContractError::LaunchAlreadyExist {});
         }
 
+        let native_denom = NATIVE_DENOM.load(deps.storage)?;
+        if whitelist_price.denom != native_denom {
+            return Err(ContractError::DenomNotSupported {});
+        }
+        if public_price.denom != native_denom {
+            return Err(ContractError::DenomNotSupported {});
+        }
+
         LAUNCHES.save(
             deps.storage,
             &contract_address,
@@ -235,6 +244,18 @@ pub mod execute {
         if is_owner.is_err() {
             if info.sender != launch.owner_address {
                 return Err(ContractError::Unauthorized {});
+            }
+        }
+
+        let native_denom = NATIVE_DENOM.load(deps.storage)?;
+        if let Some(ref whitelist_price) = whitelist_price {
+            if whitelist_price.denom != native_denom {
+                return Err(ContractError::DenomNotSupported {});
+            }
+        }
+        if let Some(ref public_price) = public_price {
+            if public_price.denom != native_denom {
+                return Err(ContractError::DenomNotSupported {});
             }
         }
 
@@ -656,6 +677,7 @@ mod tests {
 
         let msg = InstantiateMsg {
             taker_fee: Uint64::new(10),
+            native_denom: "aconst".to_string(),
         };
         let info = mock_info("creator", &coins(1000, "earth"));
 

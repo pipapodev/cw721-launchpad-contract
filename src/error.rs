@@ -30,4 +30,7 @@ pub enum ContractError {
 
     #[error("LaunchAlreadyExist")]
     LaunchAlreadyExist {},
+
+    #[error("DenomNotSupported")]
+    DenomNotSupported {},
 }
