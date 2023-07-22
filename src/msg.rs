@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Uint128, Uint64};
+use cosmwasm_std::{Coin, Uint64};
 use cw_ownable::cw_ownable_execute;
 
 #[allow(unused_imports)]
@@ -27,15 +27,14 @@ pub enum ExecuteMsg {
         base_uri: String,
         is_base_uri_static: bool,
         media_extension: Option<String>,
-        whitelist_price: Uint128,
+        whitelist_price: Coin,
         whitelist_max_buy: Option<u16>,
         whitelist_started_at: Uint64,
         whitelist_ended_at: Uint64,
-        public_price: Uint128,
+        public_price: Coin,
         public_max_buy: Option<u16>,
         public_started_at: Uint64,
         public_ended_at: Uint64,
-        price_denom: String,
         royalty_percentage: Option<u64>,
         royalty_payment_address: Option<String>,
     },
@@ -48,15 +47,14 @@ pub enum ExecuteMsg {
         base_uri: Option<String>,
         is_base_uri_static: Option<bool>,
         media_extension: Option<String>,
-        whitelist_price: Option<Uint128>,
+        whitelist_price: Option<Coin>,
         whitelist_max_buy: Option<u16>,
         whitelist_started_at: Option<Uint64>,
         whitelist_ended_at: Option<Uint64>,
-        public_price: Option<Uint128>,
+        public_price: Option<Coin>,
         public_max_buy: Option<u16>,
         public_started_at: Option<Uint64>,
         public_ended_at: Option<Uint64>,
-        price_denom: Option<String>,
     },
     AddToWhitelist {
         contract_address: String,

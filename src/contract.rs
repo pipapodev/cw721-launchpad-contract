@@ -57,7 +57,6 @@ pub fn execute(
             public_max_buy,
             public_started_at,
             public_ended_at,
-            price_denom,
             royalty_percentage,
             royalty_payment_address,
         } => execute::add_launch(
@@ -78,7 +77,6 @@ pub fn execute(
             public_max_buy,
             public_started_at,
             public_ended_at,
-            price_denom,
             royalty_percentage,
             royalty_payment_address,
         ),
@@ -99,7 +97,6 @@ pub fn execute(
             public_max_buy,
             public_started_at,
             public_ended_at,
-            price_denom,
         } => execute::modify_launch(
             deps,
             env,
@@ -117,7 +114,6 @@ pub fn execute(
             public_max_buy,
             public_started_at,
             public_ended_at,
-            price_denom,
         ),
         ExecuteMsg::AddToWhitelist {
             contract_address,
@@ -136,7 +132,7 @@ pub fn execute(
 pub mod execute {
     use std::marker::PhantomData;
 
-    use cosmwasm_std::{coins, Addr, BankMsg, Decimal, Empty, Uint128, Uint64};
+    use cosmwasm_std::{coins, Addr, BankMsg, Coin, Decimal, Empty, Uint64};
     use cw721_rewards::Metadata;
     use cw_storage_plus::Map;
 
@@ -164,15 +160,14 @@ pub mod execute {
         base_uri: String,
         is_base_uri_static: bool,
         media_extension: Option<String>,
-        whitelist_price: Uint128,
+        whitelist_price: Coin,
         whitelist_max_buy: Option<u16>,
         whitelist_started_at: Uint64,
         whitelist_ended_at: Uint64,
-        public_price: Uint128,
+        public_price: Coin,
         public_max_buy: Option<u16>,
         public_started_at: Uint64,
         public_ended_at: Uint64,
-        price_denom: String,
         royalty_percentage: Option<u64>,
         royalty_payment_address: Option<String>,
     ) -> Result<Response, ContractError> {
@@ -196,15 +191,14 @@ pub mod execute {
                 base_uri,
                 is_base_uri_static,
                 media_extension,
-                whitelist_price: whitelist_price.u128(),
+                whitelist_price: whitelist_price,
                 whitelist_max_buy,
                 whitelist_started_at: whitelist_started_at.u64(),
                 whitelist_ended_at: whitelist_ended_at.u64(),
-                public_price: public_price.u128(),
+                public_price: public_price,
                 public_max_buy,
                 public_started_at: public_started_at.u64(),
                 public_ended_at: public_ended_at.u64(),
-                price_denom,
                 last_token_id: 0,
                 royalty_percentage,
                 royalty_payment_address,
@@ -223,15 +217,14 @@ pub mod execute {
         base_uri: Option<String>,
         is_base_uri_static: Option<bool>,
         media_extension: Option<String>,
-        whitelist_price: Option<Uint128>,
+        whitelist_price: Option<Coin>,
         whitelist_max_buy: Option<u16>,
         whitelist_started_at: Option<Uint64>,
         whitelist_ended_at: Option<Uint64>,
-        public_price: Option<Uint128>,
+        public_price: Option<Coin>,
         public_max_buy: Option<u16>,
         public_started_at: Option<Uint64>,
         public_ended_at: Option<Uint64>,
-        price_denom: Option<String>,
     ) -> Result<Response, ContractError> {
         let contract_address = deps.api.addr_validate(&contract_address)?;
 
@@ -271,7 +264,7 @@ pub mod execute {
                     launch.media_extension
                 },
                 whitelist_price: if let Some(whitelist_price) = whitelist_price {
-                    whitelist_price.u128()
+                    whitelist_price
                 } else {
                     launch.whitelist_price
                 },
@@ -291,7 +284,7 @@ pub mod execute {
                     launch.whitelist_ended_at
                 },
                 public_price: if let Some(public_price) = public_price {
-                    public_price.u128()
+                    public_price
                 } else {
                     launch.public_price
                 },
@@ -309,11 +302,6 @@ pub mod execute {
                     public_ended_at.u64()
                 } else {
                     launch.public_ended_at
-                },
-                price_denom: if let Some(price_denom) = price_denom {
-                    price_denom
-                } else {
-                    launch.price_denom
                 },
                 last_token_id: launch.last_token_id,
                 royalty_percentage: launch.royalty_percentage,
@@ -348,7 +336,7 @@ pub mod execute {
         let mut launch = LAUNCHES.load(deps.storage, &contract_address)?;
 
         // check funds
-        let fund_input = cw_utils::must_pay(&info, &launch.price_denom).unwrap();
+        let fund_input;
 
         // check if last_token_id < total_supply
         if launch.last_token_id >= launch.max_supply {
@@ -358,14 +346,17 @@ pub mod execute {
         let receiver_address = if let Some(receiver_id) = receiver_address {
             deps.api.addr_validate(receiver_id.as_str())?
         } else {
-            info.sender
+            info.sender.clone()
         };
 
         // Determine minting status
+        let denom;
         let current_timestamp_in_seconds = env.block.time.seconds();
         if current_timestamp_in_seconds > launch.whitelist_started_at
             && current_timestamp_in_seconds < launch.whitelist_ended_at
         {
+            denom = &launch.whitelist_price.denom;
+            fund_input = cw_utils::must_pay(&info, denom).unwrap();
             // check if user in whitelist
             let whitelist_map_key = format!("{}-{}", contract_address, "whitelist");
             let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
@@ -377,7 +368,7 @@ pub mod execute {
             }
 
             // whitelist
-            if fund_input.u128() != launch.whitelist_price {
+            if fund_input.u128() != launch.whitelist_price.amount.u128() {
                 return Err(ContractError::InsufficientFunds {});
             }
 
@@ -398,8 +389,11 @@ pub mod execute {
         } else if current_timestamp_in_seconds > launch.public_started_at
             && current_timestamp_in_seconds < launch.public_ended_at
         {
+            denom = &launch.public_price.denom;
+            fund_input = cw_utils::must_pay(&info, denom).unwrap();
+
             // public
-            if fund_input.u128() != launch.public_price {
+            if fund_input.u128() != launch.public_price.amount.u128() {
                 return Err(ContractError::InsufficientFunds {});
             }
 
@@ -476,7 +470,7 @@ pub mod execute {
                     .owner
                     .unwrap()
                     .to_string(),
-                amount: coins(admin_funds.u128(), launch.price_denom.clone()),
+                amount: coins(admin_funds.u128(), denom),
             };
             messages.push(send_admin_funds_msg.into())
         }
@@ -486,7 +480,7 @@ pub mod execute {
         if owner_funds.u128() > 0 {
             let send_owner_funds_msg = BankMsg::Send {
                 to_address: launch.owner_address.to_string(),
-                amount: coins(owner_funds.u128(), launch.price_denom),
+                amount: coins(owner_funds.u128(), denom),
             };
 
             messages.push(send_owner_funds_msg.into())
