@@ -4,7 +4,7 @@ use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response,
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
 use crate::state::{NATIVE_DENOM, TAKERADDRESS, TAKERFEE};
 use cw721_rewards::{helpers::Cw721Contract, msg::ExecuteMsg as Cw721ExecuteMsg};
 
@@ -218,7 +218,9 @@ pub mod execute {
             },
         )?;
 
-        Ok(Response::new().add_attribute("action", "add_launch"))
+        Ok(Response::new()
+            .add_attribute("action", "add_launch")
+            .add_attribute("contract_address", contract_address))
     }
 
     pub fn modify_launch(
@@ -334,7 +336,9 @@ pub mod execute {
             },
         )?;
 
-        Ok(Response::new().add_attribute("action", "modify_launch"))
+        Ok(Response::new()
+            .add_attribute("action", "modify_launch")
+            .add_attribute("contract_address", contract_address))
     }
 
     pub fn remove_launch(
@@ -347,7 +351,9 @@ pub mod execute {
 
         LAUNCHES.remove(deps.storage, &contract_address);
 
-        Ok(Response::new().add_attribute("action", "remove_launch"))
+        Ok(Response::new()
+            .add_attribute("action", "remove_launch")
+            .add_attribute("contract_address", contract_address))
     }
 
     pub fn mint(
@@ -457,7 +463,7 @@ pub mod execute {
         };
 
         let mint_msg = Cw721ExecuteMsg::<Option<Metadata>>::Mint {
-            token_id,
+            token_id: token_id.clone(),
             owner: receiver_address.to_string(),
             token_uri: Some(token_uri),
             extension: Some(Metadata {
@@ -477,8 +483,9 @@ pub mod execute {
 
         LAUNCHES.save(deps.storage, &contract_address, &launch)?;
 
-        let callback = Cw721Contract::<Empty, Empty>(contract_address, PhantomData, PhantomData)
-            .call(mint_msg)?;
+        let callback =
+            Cw721Contract::<Empty, Empty>(contract_address.clone(), PhantomData, PhantomData)
+                .call(mint_msg)?;
 
         let mut messages = Vec::new();
         messages.push(callback);
@@ -507,7 +514,13 @@ pub mod execute {
             messages.push(send_owner_funds_msg.into())
         }
 
-        Ok(Response::new().add_messages(messages))
+        Ok(Response::new()
+            .add_messages(messages)
+            .add_attribute("action", "mint_from_launchpad")
+            .add_attribute("contract_address", contract_address.to_string())
+            .add_attribute("token_id", token_id)
+            .add_attribute("receiver_address", receiver_address)
+            .add_attribute("price", fund_input.to_string()))
     }
 
     pub fn add_to_whitelist(
@@ -532,11 +545,14 @@ pub mod execute {
         );
         let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
 
-        for address in account_addresses {
+        for address in account_addresses.clone() {
             whitelist_map.save(deps.storage, &deps.api.addr_validate(&address)?, &Empty {})?;
         }
 
-        Ok(Response::new().add_attribute("action", "add_to_whitelist"))
+        Ok(Response::new()
+            .add_attribute("action", "add_to_whitelist")
+            .add_attribute("contract_address", contract_address)
+            .add_attribute("account_addresses", account_addresses.join(",")))
     }
 
     pub fn remove_to_whitelist(
@@ -561,11 +577,14 @@ pub mod execute {
         );
         let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
 
-        for address in account_addresses {
+        for address in account_addresses.clone() {
             whitelist_map.remove(deps.storage, &deps.api.addr_validate(&address)?);
         }
 
-        Ok(Response::new().add_attribute("action", "add_to_whitelist"))
+        Ok(Response::new()
+            .add_attribute("action", "remove_to_whitelist")
+            .add_attribute("contract_address", contract_address)
+            .add_attribute("account_addresses", account_addresses.join(",")))
     }
 
     pub fn change_taker_fee(
@@ -577,7 +596,9 @@ pub mod execute {
 
         TAKERFEE.save(deps.storage, &taker_fee.u64())?;
 
-        Ok(Response::new().add_attribute("action", "change_taker_fee"))
+        Ok(Response::new()
+            .add_attribute("action", "change_taker_fee")
+            .add_attribute("taker_fee", taker_fee))
     }
 }
 
@@ -599,6 +620,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             account_address,
         )?),
     }
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    Ok(Response::default())
 }
 
 pub mod query {

@@ -91,3 +91,8 @@ pub struct LaunchStatus {
 pub struct WhitelistStatus {
     pub is_whitelist: bool,
 }
+
+#[cw_serde]
+pub enum MigrateMsg {
+    Migrate {},
+}
