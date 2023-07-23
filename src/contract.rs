@@ -137,7 +137,7 @@ pub fn execute(
 pub mod execute {
     use std::marker::PhantomData;
 
-    use cosmwasm_std::{coins, Addr, BankMsg, Coin, Decimal, Empty, Uint64};
+    use cosmwasm_std::{coins, Addr, BankMsg, Coin, Decimal, Empty, Uint128, Uint64};
     use cw721_rewards::Metadata;
     use cw_storage_plus::Map;
 
@@ -382,11 +382,14 @@ pub mod execute {
 
         // Determine minting status
         let denom;
+        let price: Uint128;
         let current_timestamp_in_seconds = env.block.time.seconds();
         if current_timestamp_in_seconds > launch.whitelist_started_at
             && current_timestamp_in_seconds < launch.whitelist_ended_at
         {
             denom = &launch.whitelist_price.denom;
+            price = launch.whitelist_price.amount;
+
             fund_input = cw_utils::must_pay(&info, denom).unwrap();
             // check if user in whitelist
             let whitelist_map_key = format!("{}-{}", contract_address, "whitelist");
@@ -399,7 +402,7 @@ pub mod execute {
             }
 
             // whitelist
-            if fund_input.u128() != launch.whitelist_price.amount.u128() {
+            if fund_input.u128() < launch.whitelist_price.amount.u128() {
                 return Err(ContractError::InsufficientFunds {});
             }
 
@@ -422,9 +425,10 @@ pub mod execute {
         {
             denom = &launch.public_price.denom;
             fund_input = cw_utils::must_pay(&info, denom).unwrap();
+            price = launch.public_price.amount;
 
             // public
-            if fund_input.u128() != launch.public_price.amount.u128() {
+            if fund_input.u128() < launch.public_price.amount.u128() {
                 return Err(ContractError::InsufficientFunds {});
             }
 
@@ -520,7 +524,7 @@ pub mod execute {
             .add_attribute("contract_address", contract_address.to_string())
             .add_attribute("token_id", token_id)
             .add_attribute("receiver_address", receiver_address)
-            .add_attribute("price", fund_input.to_string()))
+            .add_attribute("price", price))
     }
 
     pub fn add_to_whitelist(
