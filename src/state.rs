@@ -22,6 +22,7 @@ pub struct Launch {
     pub royalty_percentage: Option<u64>,
     // https://github.com/CosmWasm/cw-nfts/blob/main/contracts/cw2981-royalties/src/lib.rs#L45
     pub royalty_payment_address: Option<String>,
+    pub whitelist_merkle_root: Option<String>,
 }
 
 pub type ContractAddress = Addr;

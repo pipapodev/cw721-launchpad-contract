@@ -16,7 +16,7 @@ struct Launch {
     whitelist_max_buy: u16,
     whitelist_started_at: u64,
     whitelist_ended_at: u64,
-    public_price: Uint128
+    public_price: Uint128,
     public_max_buy: u16,
     public_started_at: u64,
     public_ended_at: u64,

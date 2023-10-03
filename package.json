@@ -1,0 +1,12 @@
+{
+  "name": "cw721-launchpad-contract",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:emarai/cw721-launchpad-contract.git",
+  "author": "Irfianto <irfi147@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@archwayhq/arch3.js": "^0.4.0",
+    "merkletreejs": "^0.3.10"
+  }
+}

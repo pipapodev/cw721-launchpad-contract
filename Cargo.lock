@@ -433,8 +433,10 @@ dependencies = [
  "cw-utils 0.13.4",
  "cw2 1.1.0",
  "cw721-rewards",
+ "hex",
  "schemars",
  "serde",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
