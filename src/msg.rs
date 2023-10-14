@@ -21,6 +21,7 @@ pub enum ExecuteMsg {
     Mint {
         contract_address: String,
         receiver_address: Option<String>,
+        proof: Option<Vec<String>>,
     },
     AddLaunch {
         owner_address: String,
@@ -39,6 +40,7 @@ pub enum ExecuteMsg {
         public_ended_at: Uint64,
         royalty_percentage: Option<u64>,
         royalty_payment_address: Option<String>,
+        whitelist_merkle_root: Option<String>,
     },
     RemoveLaunch {
         contract_address: String,
@@ -57,14 +59,7 @@ pub enum ExecuteMsg {
         public_max_buy: Option<u16>,
         public_started_at: Option<Uint64>,
         public_ended_at: Option<Uint64>,
-    },
-    AddToWhitelist {
-        contract_address: String,
-        account_addresses: Vec<String>,
-    },
-    RemoveToWhitelist {
-        contract_address: String,
-        account_addresses: Vec<String>,
+        whitelist_merkle_root: Option<String>,
     },
 }
 
@@ -79,6 +74,7 @@ pub enum QueryMsg {
     GetWhitelistStatus {
         contract_address: String,
         account_address: String,
+        proof: Vec<String>,
     },
 }
 

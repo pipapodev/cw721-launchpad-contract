@@ -11,6 +11,7 @@ use cw721_rewards::{helpers::Cw721Contract, msg::ExecuteMsg as Cw721ExecuteMsg};
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:cw721-launchpad-contract";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+use sha2::Digest;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -46,7 +47,8 @@ pub fn execute(
         ExecuteMsg::Mint {
             contract_address,
             receiver_address,
-        } => execute::mint(deps, env, info, contract_address, receiver_address),
+            proof,
+        } => execute::mint(deps, env, info, contract_address, receiver_address, proof),
         ExecuteMsg::AddLaunch {
             owner_address,
             contract_address,
@@ -64,6 +66,7 @@ pub fn execute(
             public_ended_at,
             royalty_percentage,
             royalty_payment_address,
+            whitelist_merkle_root,
         } => execute::add_launch(
             deps,
             env,
@@ -84,6 +87,7 @@ pub fn execute(
             public_ended_at,
             royalty_percentage,
             royalty_payment_address,
+            whitelist_merkle_root,
         ),
         ExecuteMsg::RemoveLaunch { contract_address } => {
             execute::remove_launch(deps, info, contract_address)
@@ -102,6 +106,7 @@ pub fn execute(
             public_max_buy,
             public_started_at,
             public_ended_at,
+            whitelist_merkle_root,
         } => execute::modify_launch(
             deps,
             env,
@@ -119,15 +124,8 @@ pub fn execute(
             public_max_buy,
             public_started_at,
             public_ended_at,
+            whitelist_merkle_root,
         ),
-        ExecuteMsg::AddToWhitelist {
-            contract_address,
-            account_addresses,
-        } => execute::add_to_whitelist(deps, info, contract_address, account_addresses),
-        ExecuteMsg::RemoveToWhitelist {
-            contract_address,
-            account_addresses,
-        } => execute::remove_to_whitelist(deps, info, contract_address, account_addresses),
         ExecuteMsg::ChangeTakerFee { taker_fee } => {
             execute::change_taker_fee(deps, info, taker_fee)
         }
@@ -175,6 +173,7 @@ pub mod execute {
         public_ended_at: Uint64,
         royalty_percentage: Option<u64>,
         royalty_payment_address: Option<String>,
+        whitelist_merkle_root: Option<String>,
     ) -> Result<Response, ContractError> {
         cw_ownable::assert_owner(deps.storage, &info.sender)?;
 
@@ -215,6 +214,7 @@ pub mod execute {
                 last_token_id: 0,
                 royalty_percentage,
                 royalty_payment_address,
+                whitelist_merkle_root,
             },
         )?;
 
@@ -240,6 +240,7 @@ pub mod execute {
         public_max_buy: Option<u16>,
         public_started_at: Option<Uint64>,
         public_ended_at: Option<Uint64>,
+        whitelist_merkle_root: Option<String>,
     ) -> Result<Response, ContractError> {
         let contract_address = deps.api.addr_validate(&contract_address)?;
 
@@ -333,6 +334,11 @@ pub mod execute {
                 last_token_id: launch.last_token_id,
                 royalty_percentage: launch.royalty_percentage,
                 royalty_payment_address: launch.royalty_payment_address,
+                whitelist_merkle_root: if let Some(whitelist_merkle_root) = whitelist_merkle_root {
+                    Some(whitelist_merkle_root)
+                } else {
+                    launch.whitelist_merkle_root
+                },
             },
         )?;
 
@@ -362,6 +368,7 @@ pub mod execute {
         info: MessageInfo,
         contract_address: String,
         receiver_address: Option<String>,
+        proof: Option<Vec<String>>,
     ) -> Result<Response, ContractError> {
         let contract_address = deps.api.addr_validate(&contract_address)?;
         let mut launch = LAUNCHES.load(deps.storage, &contract_address)?;
@@ -374,10 +381,11 @@ pub mod execute {
             return Err(ContractError::SoldOut {});
         }
 
+        let account_address = info.sender.clone();
         let receiver_address = if let Some(receiver_id) = receiver_address {
             deps.api.addr_validate(receiver_id.as_str())?
         } else {
-            info.sender.clone()
+            account_address.clone()
         };
 
         // Determine minting status
@@ -387,17 +395,20 @@ pub mod execute {
         if current_timestamp_in_seconds > launch.whitelist_started_at
             && current_timestamp_in_seconds < launch.whitelist_ended_at
         {
+            // WHITELIST MINT
             denom = &launch.whitelist_price.denom;
             price = launch.whitelist_price.amount;
 
             fund_input = cw_utils::must_pay(&info, denom).unwrap();
             // check if user in whitelist
-            let whitelist_map_key = format!("{}-{}", contract_address, "whitelist");
-            let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
 
-            let is_whitelisted = whitelist_map.load(deps.storage, &receiver_address);
+            let is_whitelisted = verify_merkle_proof(
+                account_address.to_string(),
+                launch.whitelist_merkle_root.as_ref().unwrap(),
+                proof.unwrap(),
+            );
 
-            if is_whitelisted.is_err() {
+            if !is_whitelisted {
                 return Err(ContractError::NotWhitelisted {});
             }
 
@@ -527,70 +538,6 @@ pub mod execute {
             .add_attribute("price", price))
     }
 
-    pub fn add_to_whitelist(
-        deps: DepsMut,
-        info: MessageInfo,
-        contract_address: String,
-        account_addresses: Vec<String>,
-    ) -> Result<Response, ContractError> {
-        let launch = LAUNCHES.load(deps.storage, &deps.api.addr_validate(&contract_address)?)?;
-        let is_owner = cw_ownable::assert_owner(deps.storage, &info.sender);
-
-        if is_owner.is_err() {
-            if info.sender != launch.owner_address {
-                return Err(ContractError::Unauthorized {});
-            }
-        }
-
-        let whitelist_map_key = format!(
-            "{}-{}",
-            deps.api.addr_validate(&contract_address)?,
-            "whitelist"
-        );
-        let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
-
-        for address in account_addresses.clone() {
-            whitelist_map.save(deps.storage, &deps.api.addr_validate(&address)?, &Empty {})?;
-        }
-
-        Ok(Response::new()
-            .add_attribute("action", "add_to_whitelist")
-            .add_attribute("contract_address", contract_address)
-            .add_attribute("account_addresses", account_addresses.join(",")))
-    }
-
-    pub fn remove_to_whitelist(
-        deps: DepsMut,
-        info: MessageInfo,
-        contract_address: String,
-        account_addresses: Vec<String>,
-    ) -> Result<Response, ContractError> {
-        let launch = LAUNCHES.load(deps.storage, &deps.api.addr_validate(&contract_address)?)?;
-        let is_owner = cw_ownable::assert_owner(deps.storage, &info.sender);
-
-        if is_owner.is_err() {
-            if info.sender != launch.owner_address {
-                return Err(ContractError::Unauthorized {});
-            }
-        }
-
-        let whitelist_map_key = format!(
-            "{}-{}",
-            deps.api.addr_validate(&contract_address)?,
-            "whitelist"
-        );
-        let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
-
-        for address in account_addresses.clone() {
-            whitelist_map.remove(deps.storage, &deps.api.addr_validate(&address)?);
-        }
-
-        Ok(Response::new()
-            .add_attribute("action", "remove_to_whitelist")
-            .add_attribute("contract_address", contract_address)
-            .add_attribute("account_addresses", account_addresses.join(",")))
-    }
-
     pub fn change_taker_fee(
         deps: DepsMut,
         info: MessageInfo,
@@ -618,10 +565,12 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetWhitelistStatus {
             contract_address,
             account_address,
+            proof,
         } => to_binary(&query::get_whitelist_status(
             deps,
             contract_address,
             account_address,
+            proof,
         )?),
     }
 }
@@ -632,9 +581,6 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
 }
 
 pub mod query {
-    use cosmwasm_std::{Addr, Empty};
-    use cw_storage_plus::Map;
-
     use crate::{
         msg::{LaunchStatus, WhitelistStatus},
         state::{Launch, LAUNCHES},
@@ -679,20 +625,44 @@ pub mod query {
         deps: Deps,
         contract_address: String,
         account_address: String,
+        proof: Vec<String>,
     ) -> StdResult<WhitelistStatus> {
-        let whitelist_map_key = format!(
-            "{}-{}",
-            deps.api.addr_validate(&contract_address)?,
-            "whitelist"
-        );
-        let whitelist_map: Map<&Addr, Empty> = Map::new(whitelist_map_key.as_str());
+        // verify merkle root
+        let launch = get_launch(deps, contract_address).unwrap();
 
-        let res = whitelist_map.load(deps.storage, &deps.api.addr_validate(&account_address)?);
+        let merkle_root = launch.whitelist_merkle_root.unwrap();
 
-        Ok(WhitelistStatus {
-            is_whitelist: res.is_ok(),
-        })
+        if !verify_merkle_proof(account_address, &merkle_root, proof) {
+            Ok(WhitelistStatus {
+                is_whitelist: false,
+            })
+        } else {
+            Ok(WhitelistStatus { is_whitelist: true })
+        }
     }
+}
+
+fn verify_merkle_proof(user_input: String, merkle_root: &String, proof: Vec<String>) -> bool {
+    // https://github.com/CosmWasm/cw-tokens/blob/main/contracts/cw20-merkle-airdrop/src/contract.rs#L282
+    let hash = sha2::Sha256::digest(user_input.as_bytes())
+        .as_slice()
+        .try_into()
+        .unwrap();
+
+    let hash = proof
+        .into_iter()
+        .try_fold(hash, |hash, p| {
+            let mut proof_buf = [0; 32];
+            let _ = hex::decode_to_slice(p, &mut proof_buf);
+            let mut hashes = [hash, proof_buf];
+            hashes.sort_unstable();
+            sha2::Sha256::digest(&hashes.concat()).as_slice().try_into()
+        })
+        .unwrap();
+
+    let mut root_buf: [u8; 32] = [0; 32];
+    let _ = hex::decode_to_slice(merkle_root, &mut root_buf);
+    return root_buf == hash;
 }
 
 #[cfg(test)]
@@ -716,51 +686,4 @@ mod tests {
         let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
         assert_eq!(0, res.messages.len());
     }
-
-    // #[test]
-    // fn increment() {
-    //     let mut deps = mock_dependencies();
-
-    //     let msg = InstantiateMsg {};
-    //     let info = mock_info("creator", &coins(2, "token"));
-    //     let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-    //     // beneficiary can release it
-    //     let info = mock_info("anyone", &coins(2, "token"));
-    //     let msg = ExecuteMsg::Increment {};
-    //     let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-    //     // should increase counter by 1
-    //     let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-    //     let value: GetCountResponse = from_binary(&res).unwrap();
-    //     assert_eq!(18, value.count);
-    // }
-
-    // #[test]
-    // fn reset() {
-    //     let mut deps = mock_dependencies();
-
-    //     let msg = InstantiateMsg {};
-    //     let info = mock_info("creator", &coins(2, "token"));
-    //     let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-    //     // beneficiary can release it
-    //     let unauth_info = mock_info("anyone", &coins(2, "token"));
-    //     let msg = ExecuteMsg::Reset { count: 5 };
-    //     let res = execute(deps.as_mut(), mock_env(), unauth_info, msg);
-    //     match res {
-    //         Err(ContractError::Unauthorized {}) => {}
-    //         _ => panic!("Must return unauthorized error"),
-    //     }
-
-    //     // only the original creator can reset the counter
-    //     let auth_info = mock_info("creator", &coins(2, "token"));
-    //     let msg = ExecuteMsg::Reset { count: 5 };
-    //     let _res = execute(deps.as_mut(), mock_env(), auth_info, msg).unwrap();
-
-    //     // should now be 5
-    //     let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-    //     let value: GetCountResponse = from_binary(&res).unwrap();
-    //     assert_eq!(5, value.count);
-    // }
 }

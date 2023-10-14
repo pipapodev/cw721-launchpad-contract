@@ -33,4 +33,10 @@ pub enum ContractError {
 
     #[error("DenomNotSupported")]
     DenomNotSupported {},
+
+    #[error("Wrong Length")]
+    WrongLength {},
+
+    #[error("Verification Failed")]
+    VerificationFailed {},
 }

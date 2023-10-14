@@ -56,6 +56,8 @@ thiserror = { version = "1.0.38" }
 cw-ownable      = "0.5.1"
 cw-utils = "0.13"
 cw721-rewards  = { version = "0.17.0", git = "https://github.com/emarai/cw721-rewards", features = ["library"] }
+sha2 = { version = "0.9.9", default-features = false }
+hex = "0.4"
 
 
 [dev-dependencies]
